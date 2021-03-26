@@ -19,7 +19,7 @@ import io from 'socket.io-client';
 import SelectName from './components/SelectName.vue'
 import GameScreen from './components/GameScreen.vue'
 
-const ioHost = 'localhost:3001';
+const ioHost = process.env.NODE_ENV === 'development' ? 'localhost:3001' : 'julklappar.herokuapp.com';
 
 export default {
   name: 'app',

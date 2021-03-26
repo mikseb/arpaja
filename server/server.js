@@ -9,9 +9,12 @@ let availableNumbers = [];
 const server = app.listen(port, function() {
     console.log('server running on port ' + port);
 });
+
+const corsOrigin = process.env.NODE_ENV === 'development' ? 'http://localhost:8080' : 'https://julklappar.herokuapp.com';
+
 const io = require('socket.io')(server, {
     cors: {
-      origin: "http://localhost:8080",
+      origin: corsOrigin,
       methods: ["GET", "POST"]
     }
   }
