@@ -16,9 +16,9 @@ const io = require('socket.io')(server, {
     }
   }
 );
-
+console.log(process.cwd())
 //serves dist folder on root
-app.use('/', express.static(process.cwd().replace('server', 'dist')))
+app.use('/', express.static(process.cwd() + '/dist'))
 
 function addPlayer(playerName){
     players.push({
