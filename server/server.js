@@ -131,6 +131,7 @@ function playerPickNumber(playerName) {
 function playerReturnNumber(playerName) {
   players.forEach((player, index) => {
     if (player.name == playerName && player.currentNumber) {
+      availableNumbers.push(player.currentNumber)
       players[index].currentNumber = 0;
       return;
     }
