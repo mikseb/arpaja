@@ -2,13 +2,15 @@
 <template>
   <div id="app">
     <div class="container">
-      <div v-if="!name" class="pre-game">
-        <h2>Julpåskklappar</h2>
-        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. </p>
+      <div v-if="!playerInState" class="pre-game">
+        <h2>Påsklotteriet</h2>
+        <h4>Rekommendationer</h4>
+        <p>Om du träffar personer utanför din mindre krets bör ni ses på ett sätt som minskar risken för smittspridning. Umgås utomhus om det går, och håll så stort avstånd som möjligt till varandra. Undvik att vara nära varandra, framförallt på platser där det är trångt om utrymme under en längre tid. <br>- Folkhälsomyndigheten</p>
         <Select-Name @set-name="handleSetName"/>
+        <p>Copyright 2021 © Årstadal Web Media Productions</p>
       </div> 
-      <div v-if="name">
-        <GameScreen :name-="name" :players="players"/>
+      <div v-if="playerInState">
+        <GameScreen :name="name" :socket="socket" :gameState="gameState"/>
       </div>
     </div>
   </div>
@@ -25,11 +27,16 @@ export default {
   name: 'app',
   data() {
       return {
-          name: '',
+          name: 'asdf',
           ticketNumber: 0,
-          players: [],
-          socket: io(ioHost)
+          socket: io(ioHost),
+          gameState: null,
       }
+  },
+  computed: {
+    playerInState () {
+      return this.gameState && this.gameState.players.some(player => player.name === this.name);
+    }
   },
   methods:{
     handleSetName(name) {
@@ -43,19 +50,11 @@ export default {
   },
   mounted(){
     this.socket.on('UPDATE_PLAYERS', (players) => {
+      //this is some stupid
       this.players = players;
-      console.log(players)
-
     });
-    this.socket.on('PICK_NUMBER', data => {
-      if(data.player == this.name){
-        this.ticketNumber = data.number
-      }
-    })
-    this.socket.on('UPDATE_STATE', data => {
-      if(data.player == this.name){
-        this.ticketNumber = data.number
-      }
+    this.socket.on('UPDATE_STATE', state => {
+      this.gameState = state
     });
     this.$on('V_PICK_NUMBER', data => {
       console.log('picknumber', data)

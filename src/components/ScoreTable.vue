@@ -10,9 +10,9 @@
         </thead>
         <tbody>
           <tr v-for="(player, index) in players" :key="index">
+            <td>{{player.currentNumber || '-'}}</td>
             <td>{{player.name}}</td>
-            <td>{{player.wins}}</td>
-            <td><span class="badge success">123</span></td>
+            <td><span class="badge success">{{player.wins}}</span></td>
           </tr>
         </tbody>
       </table>

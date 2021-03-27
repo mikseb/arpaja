@@ -4,81 +4,146 @@ var port = process.env.PORT || 3001;
 
 let players = [];
 let availableNumbers = [];
+let lastWinner = {
+  name: '',
+  number: 0
+}
+let winningNumber = 0;
+
+// PICK_TICKET, DRAW_WINNER, WINNER_ANNOUNCED
+let state = 'PICK_TICKET';
+
+const getGameState = () => {
+  const numbersLeft = availableNumbers.length
+  return {
+    players,
+    state,
+    numbersLeft,
+    lastWinner
+  }
+}
+
 
 //Server set up
-const server = app.listen(port, function() {
-    console.log('server running on port ' + port);
+const server = app.listen(port, function () {
+  console.log('Running on port ' + port);
 });
 
 const corsOrigin = process.env.NODE_ENV === 'development' ? 'http://localhost:8080' : 'https://julklappar.herokuapp.com';
 
 const io = require('socket.io')(server, {
-    cors: {
-      origin: corsOrigin,
-      methods: ["GET", "POST"]
-    }
+  cors: {
+    origin: corsOrigin,
+    methods: ["GET", "POST"]
   }
+}
 );
-console.log(process.cwd())
+
 //serves dist folder on root
-app.use('/', express.static(process.cwd() + '/dist'))
+app.use('/', express.static(process.cwd() + '/dist'));
 
-function addPlayer(playerName){
+function getRandomNumber(){
+  return Math.floor(Math.random() * players.length + 1);
+}
+
+function addPlayer(playerName) {
+  if (playerName && !players.some(player => player.name === playerName)) {
     players.push({
-        name: playerName,
-        currentNumber: 0,
-        wins: 0
+      name: playerName,
+      currentNumber: 0,
+      wins: 0
     })
+    flushPlayerNumbers();
+    generateNumbers();
+  };
 }
 
-function removePlayer(playerName){
-    //todo
+function removePlayer(playerName) {
+  //todo
 }
 
-function isValidPlayer(playerName){
-    players.forEach(player => {
-        if (playerName == player.name){
-            return true;
-        }
-    })
-    return false;
+function isValidPlayer(playerName) {
+  players.forEach(player => {
+    if (playerName == player.name) {
+      return true;
+    }
+  })
+  return false;
 }
 
 //https://stackoverflow.com/questions/2450954/how-to-randomize-shuffle-a-javascript-array
 function shuffleArray(array) {
-    for (var i = array.length - 1; i > 0; i--) {
-        var j = Math.floor(Math.random() * (i + 1));
-        var temp = array[i];
-        array[i] = array[j];
-        array[j] = temp;
+  var currentIndex = array.length, temporaryValue, randomIndex;
+
+  // While there remain elements to shuffle...
+  while (0 !== currentIndex) {
+
+    // Pick a remaining element...
+    randomIndex = Math.floor(Math.random() * currentIndex);
+    currentIndex -= 1;
+
+    // And swap it with the current element.
+    temporaryValue = array[currentIndex];
+    array[currentIndex] = array[randomIndex];
+    array[randomIndex] = temporaryValue;
+  }
+
+  return array;
+}
+
+function pickWinner(){
+  players.forEach(player =>{
+    if (player.currentNumber === winningNumber){
+      lastWinner.name = player.name;
+      lastWinner.number = winningNumber;
     }
+  })
+  flushPlayerNumbers();
+  generateNumbers();
+  io.emit('UPDATE_STATE', getGameState())
 }
 
 function generateNumbers(){
-    availableNumbers = [];
-    players.forEach((value, index) =>{
-        availableNumbers.push(index+1);
-    })
-    availableNumbers = shuffleArray(availableNumbers);
+  winningNumber = getRandomNumber();
+  availableNumbers = [];
+  players.forEach((value, index) => {
+    availableNumbers.push(index + 1);
+  })
+  availableNumbers = shuffleArray(availableNumbers)
 }
 
-function pickNumber(playerName) {
-    players.forEach(player =>{
-        if(player.name == playerName){
-            
-        }
-    })
+function playerPickNumber(playerName) {
+  players.forEach((player, index) => {
+    if (player.name == playerName && !player.currentNumber) {
+      players[index].currentNumber = availableNumbers.pop();
+      return;
+    }
+  })
+  if(availableNumbers.length === 0){
+    pickWinner();
+  }
 }
 
-io.on('connection', function(socket) {
-    console.log(socket.id)
-    socket.on('SEND_MESSAGE', function(data) {
-        io.emit('MESSAGE', data)
-    });
-    socket.on('PLAYER_JOIN', function(name) {
+function flushPlayerNumbers() {
+  players.forEach((player, index) => {
+    players[index].currentNumber = 0;
+  })
+}
 
-        addPlayer(name)
-        io.emit('UPDATE_PLAYERS', players)
 
-    });
+io.on('connection', function (socket) {
+  console.log(socket.id)
+  socket.on('SEND_MESSAGE', function (data) {
+    io.emit('MESSAGE', data)
+  });
+  socket.on('PLAYER_JOIN', function (name) {
+    addPlayer(name);
+    io.emit('UPDATE_STATE', getGameState())
+  });
+  socket.on('PICK_NUMBER', function (name) {
+    playerPickNumber(name);
+    console.log(getRandomNumber());
+    io.emit('UPDATE_STATE', getGameState())
+  })
+
 });
