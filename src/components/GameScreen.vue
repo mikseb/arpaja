@@ -14,9 +14,10 @@
   <label for="tab2">Tävlande</label>
 
   <div class="content" id="content1">
-    <div class='pickTicket'>
+    <div v-if="gameState.state === 'PICK_TICKET'" class='pickTicket'>
       <h3>Dra en lott</h3>
-      <h4 class="header">Redo</h4>
+      <p>När alla spelare har dragit en lott, kommer en vinnare dras</p>
+      <h4 class="header">Spelare med lott:</h4>
       <p>
         <span v-for="(player, index) in playersWithNumbers" :key="index" >{{ player.name }}{{index+1 == playersWithNumbers.length ? '' : ', '}}</span>
       </p>
@@ -25,6 +26,15 @@
         Man kan fortfarande byta lott om man har en muntlig överenskommelse.
       </p>
     </div>
+    <div v-if="gameState.state === 'DRAW_WINNER'" class='pickTicket'>
+      <h3>Och vinnaren är...</h3>
+      <p>Trumvirvel..</p>
+    </div>
+    <div v-if="gameState.state === 'WINNER_ANNOUNCED'" class='pickTicket'>
+      <h3>Lottnumber: {{gameState.lastWinner.number}}</h3>
+      <h4>{{gameState.lastWinner.name}} kan gå och hämta sitt paket</h4>
+      <p>Glöm inte att lämna tillbaka din lott..</p>
+    </div>
   </div>
   <div class="content" id="content2">
     <Score-Table :players="gameState.players"/>
@@ -32,8 +42,9 @@
 </div>
     <div class="bottom-menu container row">
         <div class="col-12">
-          <Button v-if="!playerHasNumber" v-on:click="pickNumber" class="btn-block">Dra en lott</Button>
-          <p v-if="playerHasNumber" class="currentNumber">{{thisPlayer.currentNumber}}</p>
+          <Button v-if="!playerHasNumber && this.gameState.state === 'PICK_TICKET'" v-on:click="pickTicket" class="btn-block">Dra en lott</Button>
+          <p v-if="playerHasNumber && gameState.state !== 'WINNER_ANNOUNCED'" class="currentNumber">{{thisPlayer.currentNumber}}</p>
+          <Button v-if="playerHasNumber && gameState.state === 'WINNER_ANNOUNCED'" v-on:click="returnTicket" class="btn-block">Lämna tillbaka lott</Button>
         </div>
         <div class="progress margin-bottom">
           <div class="bar" :style="`width:${ticketBarWidth}%`"></div>
@@ -78,9 +89,15 @@ export default {
     }
   },
   methods:{
-    pickNumber(){
-      console.log(this)
-      this.socket.emit('PICK_NUMBER', this.name)
+    pickTicket(){
+      if(this.gameState.state === 'PICK_TICKET'){
+        this.socket.emit('PICK_NUMBER', this.name)
+      }
+    },
+    returnTicket(){
+      if(this.gameState.state === 'WINNER_ANNOUNCED'){
+        this.socket.emit('RETURN_NUMBER', this.name)
+      }
     }
   }
 }

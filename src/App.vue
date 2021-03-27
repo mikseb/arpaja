@@ -50,7 +50,6 @@ export default {
   },
   mounted(){
     this.socket.on('UPDATE_PLAYERS', (players) => {
-      //this is some stupid
       this.players = players;
     });
     this.socket.on('UPDATE_STATE', state => {

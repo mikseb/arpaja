@@ -92,15 +92,20 @@ function shuffleArray(array) {
 }
 
 function pickWinner(){
-  players.forEach(player =>{
-    if (player.currentNumber === winningNumber){
-      lastWinner.name = player.name;
-      lastWinner.number = winningNumber;
-    }
-  })
-  flushPlayerNumbers();
-  generateNumbers();
-  io.emit('UPDATE_STATE', getGameState())
+  state = 'DRAW_WINNER';
+
+  setTimeout(()=>{
+    updateGameState();
+    players.forEach((player, index) => {
+      if (player.currentNumber === winningNumber){
+        lastWinner.name = player.name;
+        lastWinner.number = winningNumber;
+        players[index].wins++;
+      }
+    })
+    state = 'WINNER_ANNOUNCED'
+    updateGameState();
+  }, 5000)
 }
 
 function generateNumbers(){
@@ -123,11 +128,29 @@ function playerPickNumber(playerName) {
     pickWinner();
   }
 }
+function playerReturnNumber(playerName) {
+  players.forEach((player, index) => {
+    if (player.name == playerName && player.currentNumber) {
+      players[index].currentNumber = 0;
+      return;
+    }
+  })
+  if ( players.filter(player => Boolean(player.currentNumber)).length === 0) {
+    flushPlayerNumbers();
+    generateNumbers();
+    state = 'PICK_TICKET';
+    updateGameState();
+  }
+}
 
 function flushPlayerNumbers() {
   players.forEach((player, index) => {
     players[index].currentNumber = 0;
   })
+}
+
+function updateGameState(){
+  io.emit('UPDATE_STATE', getGameState())
 }
 
 
@@ -138,12 +161,15 @@ io.on('connection', function (socket) {
   });
   socket.on('PLAYER_JOIN', function (name) {
     addPlayer(name);
-    io.emit('UPDATE_STATE', getGameState())
+    updateGameState();
   });
   socket.on('PICK_NUMBER', function (name) {
     playerPickNumber(name);
-    console.log(getRandomNumber());
-    io.emit('UPDATE_STATE', getGameState())
+    updateGameState();
+  })
+  socket.on('RETURN_NUMBER', function (name) {
+    playerReturnNumber(name);
+    updateGameState();
   })
 
 });
