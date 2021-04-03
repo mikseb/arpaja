@@ -8,7 +8,7 @@ const infoTexts = [
   "Kom ihåg: att man kan fortfarande byta nummer om man har en muntlig överenskommelse.",
   "Även gamla saker kan hitta nya ägare, eller återkomma i nästa års lotteri.",
   "Tvätsvampar kan komma i många paket.",
-  "Tvättsvamp eller badsvamp, sfäriska svampdjur av släktet Spongia eller Hippospongia som lever i Medelhavet. -Wikipedia"
+  "Tvättsvamp eller badsvamp är sfäriska svampdjur av släktet Spongia eller Hippospongia som lever i Medelhavet. -Wikipedia"
 ]
 
 let players = [];
