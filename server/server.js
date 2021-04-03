@@ -55,15 +55,6 @@ const io = require('socket.io')(server, {
 //serves dist folder on root
 app.use('/', express.static(process.cwd() + '/dist'));
 
-if(process.env.NODE_ENV === 'production') {
-  app.use((req, res, next) => {
-    if (req.header('x-forwarded-proto') !== 'https')
-      res.redirect(`https://${req.header('host')}${req.url}`)
-    else
-      next()
-  })
-}
-
 function getRandomNumber() {
   return Math.floor(Math.random() * players.length + 1);
 }

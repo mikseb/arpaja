@@ -6,6 +6,7 @@
         <h2>Påsklotteriet</h2>
         <h4>Rekommendationer</h4>
         <p>Om du träffar personer utanför din mindre krets bör ni ses på ett sätt som minskar risken för smittspridning. Umgås utomhus om det går, och håll så stort avstånd som möjligt till varandra. Undvik att vara nära varandra, framförallt på platser där det är trångt om utrymme under en längre tid. <br>- Folkhälsomyndigheten</p>
+        <button v-if="protocol === 'http:'" v-on:click="changeProtocol">Gå till https</button>
         <Select-Name @set-name="handleSetName"/>
         <p>Copyright 2021 © Årstadal Web Media Productions</p>
       </div> 
@@ -31,6 +32,7 @@ export default {
           ticketNumber: 0,
           socket: io(ioHost),
           gameState: null,
+          protocol: window.location.protocol
       }
   },
   computed: {
@@ -42,6 +44,9 @@ export default {
     handleSetName(name) {
       this.name = name;
       this.socket.emit('PLAYER_JOIN', name)
+    },
+    changeProtocol(){
+      window.location = window.location.href.replace('http:', 'https:')
     }
   },
   components: {
