@@ -1,6 +1,6 @@
 
 <template>
-  <div id="app">
+  <div class="main" id="app">
     <div class="container">
       <div v-if="!playerInState" class="pre-game">
         <h2>Påsklotteriet</h2>
@@ -61,5 +61,13 @@ export default {
   }
 }
 </script>
+<style src='papercss/dist/paper.min.css' />
+<style>
+.main{
+  padding-bottom: 130px !important;
+}
+h2{
+  margin-top: 0;
+}
+</style>
 
-<style src='papercss/dist/paper.min.css'></style>

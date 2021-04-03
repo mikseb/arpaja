@@ -2,6 +2,15 @@ const express = require('express');
 const app = express();
 var port = process.env.PORT || 3001;
 
+const infoTexts = [
+  "Vinnaren drar som vanligt lott sist i nästa runda.",
+  "Slut på tvättsvampar? Då har du kommit rätt!",
+  "Kom ihåg: att man kan fortfarande byta nummer om man har en muntlig överenskommelse.",
+  "Även gamla saker kan hitta nya ägare, eller återkomma i nästa års lotteri.",
+  "Tvätsvampar kan komma i många paket.",
+  "Tvättsvamp eller badsvamp, sfäriska svampdjur av släktet Spongia eller Hippospongia som lever i Medelhavet. -Wikipedia"
+]
+
 let players = [];
 let availableNumbers = [];
 let lastWinner = {
@@ -9,6 +18,7 @@ let lastWinner = {
   number: 0
 }
 let winningNumber = 0;
+let infoText = getRandomInfoText();
 
 // PICK_TICKET, DRAW_WINNER, WINNER_ANNOUNCED
 let state = 'PICK_TICKET';
@@ -19,9 +29,12 @@ const getGameState = () => {
     players,
     state,
     numbersLeft,
-    lastWinner
+    lastWinner,
+    infoText
   }
 }
+
+
 
 
 //Server set up
@@ -42,8 +55,22 @@ const io = require('socket.io')(server, {
 //serves dist folder on root
 app.use('/', express.static(process.cwd() + '/dist'));
 
-function getRandomNumber(){
+app.use(function(request, response, next) {
+
+  if (process.env.NODE_ENV != 'development' && !request.secure) {
+     return response.redirect("https://" + request.headers.host + request.url);
+  }
+
+  next();
+})
+
+function getRandomNumber() {
   return Math.floor(Math.random() * players.length + 1);
+}
+
+function getRandomInfoText(){
+  const r = Math.floor(Math.random() * infoTexts.length);
+  return infoTexts[r];
 }
 
 function addPlayer(playerName) {
@@ -55,11 +82,20 @@ function addPlayer(playerName) {
     })
     flushPlayerNumbers();
     generateNumbers();
+    state = 'PICK_TICKET';
   };
 }
 
 function removePlayer(playerName) {
-  //todo
+  players.forEach((player, index) => {
+    if(playerName === player.name){
+      players.splice(index, 1)
+    }
+  })
+  flushPlayerNumbers();
+  generateNumbers();
+  state = 'PICK_TICKET'
+  updateGameState();
 }
 
 function isValidPlayer(playerName) {
@@ -91,13 +127,13 @@ function shuffleArray(array) {
   return array;
 }
 
-function pickWinner(){
+function pickWinner() {
   state = 'DRAW_WINNER';
 
-  setTimeout(()=>{
+  setTimeout(() => {
     updateGameState();
     players.forEach((player, index) => {
-      if (player.currentNumber === winningNumber){
+      if (player.currentNumber === winningNumber) {
         lastWinner.name = player.name;
         lastWinner.number = winningNumber;
         players[index].wins++;
@@ -108,7 +144,7 @@ function pickWinner(){
   }, 5000)
 }
 
-function generateNumbers(){
+function generateNumbers() {
   winningNumber = getRandomNumber();
   availableNumbers = [];
   players.forEach((value, index) => {
@@ -124,7 +160,7 @@ function playerPickNumber(playerName) {
       return;
     }
   })
-  if(availableNumbers.length === 0){
+  if (availableNumbers.length === 0) {
     pickWinner();
   }
 }
@@ -136,9 +172,10 @@ function playerReturnNumber(playerName) {
       return;
     }
   })
-  if ( players.filter(player => Boolean(player.currentNumber)).length === 0) {
+  if (players.filter(player => Boolean(player.currentNumber)).length === 0) {
     flushPlayerNumbers();
     generateNumbers();
+    infoText = getRandomInfoText();
     state = 'PICK_TICKET';
     updateGameState();
   }
@@ -150,16 +187,13 @@ function flushPlayerNumbers() {
   })
 }
 
-function updateGameState(){
+function updateGameState() {
   io.emit('UPDATE_STATE', getGameState())
 }
 
 
 io.on('connection', function (socket) {
   console.log(socket.id)
-  socket.on('SEND_MESSAGE', function (data) {
-    io.emit('MESSAGE', data)
-  });
   socket.on('PLAYER_JOIN', function (name) {
     addPlayer(name);
     updateGameState();
@@ -167,9 +201,18 @@ io.on('connection', function (socket) {
   socket.on('PICK_NUMBER', function (name) {
     playerPickNumber(name);
     updateGameState();
-  })
+  });
   socket.on('RETURN_NUMBER', function (name) {
     playerReturnNumber(name);
+    updateGameState();
+  })
+  socket.on('REMOVE_PLAYER', function(name) {
+    removePlayer(name);
+  }),
+  socket.on('RESET_GAME_STATE', function(){
+    flushPlayerNumbers();
+    generateNumbers();
+    state = 'PICK_TICKET';
     updateGameState();
   })
 
