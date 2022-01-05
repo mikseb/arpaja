@@ -3,12 +3,11 @@
   <div class="main" id="app">
     <div class="container">
       <div v-if="!playerInState" class="pre-game">
-        <h2>Påsklotteriet</h2>
-        <h4>Rekommendationer</h4>
-        <p>Om du träffar personer utanför din mindre krets bör ni ses på ett sätt som minskar risken för smittspridning. Umgås utomhus om det går, och håll så stort avstånd som möjligt till varandra. Undvik att vara nära varandra, framförallt på platser där det är trångt om utrymme under en längre tid. <br>- Folkhälsomyndigheten</p>
+        <h2>Julklappslotteri</h2>
+        <p>En hemmagjord present säger mer än en färdigköpt pryl. Den säger att man använt tid och kraft. Den säger att det är något personligt. Den säger att man får för lite veckopeng.<br><br> - Steen og Stoffer</p>
         <button v-if="protocol === 'http:'" v-on:click="changeProtocol">Gå till https</button>
         <Select-Name @set-name="handleSetName"/>
-        <p>Copyright 2021 © Årstadal Web Media Productions</p>
+        <p>Copyright 2022 © Årstadal Web Media Productions</p>
       </div> 
       <div v-if="playerInState">
         <GameScreen :name="name" :socket="socket" :gameState="gameState"/>
