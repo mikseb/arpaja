@@ -1,8 +1,15 @@
-# lotteri
+# Arpaja
+
+Lottery app created to keep our family tradition alive while complying to social distancing requirements imposted at the time.
 
 ## Project setup
 ```
 npm install
+```
+
+### Full dev environment for hot reload and server
+```
+npm run dev
 ```
 
 ### Compiles and hot-reloads for development

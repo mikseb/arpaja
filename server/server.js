@@ -34,9 +34,6 @@ const getGameState = () => {
   }
 }
 
-
-
-
 //Server set up
 const server = app.listen(port, function () {
   console.log('Running on port ' + port);
