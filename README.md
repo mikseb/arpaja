@@ -1,36 +1,39 @@
 # Arpaja
 
-Lottery app created to keep our family tradition alive while complying to social distancing requirements imposted at the time.
+Lottery app created to keep our family tradition alive while complying with the
+social distancing requirements at the time.
 
 ## Project setup
-```
+```bash
 npm install
 ```
 
-### Full dev environment for hot reload and server
-```
+## Full dev environment for hot reload and server
+```bash
 npm run dev
 ```
 
-### Compiles and hot-reloads for development
-```
+## Frontend dev server only
+```bash
 npm run serve
 ```
 
-### Compiles and minifies for production
+## Backend server only
+```bash
+npm run start:dev
 ```
+
+## Production build
+```bash
 npm run build
 ```
 
-### Run your tests
-```
-npm run test
-```
-
-### Lints and fixes files
-```
-npm run lint
+## Preview the production build
+```bash
+npm run preview
 ```
 
-### Customize configuration
-See [Configuration Reference](https://cli.vuejs.org/config/).
+## Type-check the frontend
+```bash
+npm run typecheck
+```
