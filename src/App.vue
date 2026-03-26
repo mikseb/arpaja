@@ -1,77 +1,81 @@
-
 <template>
-  <div class="main" id="app">
+  <div id="app" class="main">
     <div class="container">
       <div v-if="!playerInState" class="pre-game">
         <h2>Julklappslotteri</h2>
-        <p>En hemmagjord present säger mer än en färdigköpt pryl. Den säger att man använt tid och kraft. Den säger att det är något personligt. Den säger att man får för lite veckopeng.<br><br> - Steen og Stoffer</p>
-        <button v-if="protocol === 'http:'" v-on:click="changeProtocol">Gå till https</button>
-        <Select-Name @set-name="handleSetName"/>
+        <p>
+          En hemmagjord present säger mer än en färdigköpt pryl. Den säger att
+          man använt tid och kraft. Den säger att det är något personligt. Den
+          säger att man får för lite veckopeng.
+          <br /><br />
+          - Steen og Stoffer
+        </p>
+        <button v-if="protocol === 'http:'" @click="changeProtocol">Gå till https</button>
+        <SelectName @set-name="handleSetName" />
         <p>Copyright 2022 © Årstadal Web Media Productions</p>
-      </div> 
-      <div v-if="playerInState">
-        <GameScreen :name="name" :socket="socket" :gameState="gameState"/>
       </div>
+      <GameScreen v-else :name="name" :socket="socket" :game-state="gameState" />
     </div>
   </div>
 </template>
 
-<script>
-import io from 'socket.io-client';
-import SelectName from './components/SelectName.vue'
-import GameScreen from './components/GameScreen.vue'
+<script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { io, type Socket } from "socket.io-client";
 
-const ioHost = process.env.NODE_ENV === 'development' ? 'localhost:3001' : 'julklappar.herokuapp.com';
+import GameScreen from "./components/GameScreen.vue";
+import SelectName from "./components/SelectName.vue";
+import type { GameState } from "./types";
 
-export default {
-  name: 'app',
-  data() {
-      return {
-          name: 'asdf',
-          ticketNumber: 0,
-          socket: io(ioHost),
-          gameState: null,
-          protocol: window.location.protocol
-      }
+const emptyGameState: GameState = {
+  players: [],
+  state: "PICK_TICKET",
+  numbersLeft: 0,
+  lastWinner: {
+    name: "",
+    number: 0,
   },
-  computed: {
-    playerInState () {
-      return this.gameState && this.gameState.players.some(player => player.name === this.name);
-    }
-  },
-  methods:{
-    handleSetName(name) {
-      this.name = name;
-      this.socket.emit('PLAYER_JOIN', name)
-    },
-    changeProtocol(){
-      window.location = window.location.href.replace('http:', 'https:')
-    }
-  },
-  components: {
-    SelectName,
-    GameScreen
-  },
-  mounted(){
-    this.socket.on('UPDATE_PLAYERS', (players) => {
-      this.players = players;
-    });
-    this.socket.on('UPDATE_STATE', state => {
-      this.gameState = state
-    });
-    this.$on('V_PICK_NUMBER', data => {
-      console.log('picknumber', data)
-    })
-  }
+  infoText: "",
+};
+
+const name = ref("");
+const protocol = ref(window.location.protocol);
+const gameState = ref<GameState>(emptyGameState);
+const socket: Socket = io(import.meta.env.DEV ? "http://localhost:3001" : undefined);
+
+const playerInState = computed(() =>
+  gameState.value.players.some((player) => player.name === name.value),
+);
+
+function handleSetName(playerName: string) {
+  name.value = playerName;
+  socket.emit("PLAYER_JOIN", playerName);
 }
+
+function changeProtocol() {
+  window.location.href = window.location.href.replace("http:", "https:");
+}
+
+function handleUpdateState(state: GameState) {
+  gameState.value = state;
+}
+
+onMounted(() => {
+  socket.on("UPDATE_STATE", handleUpdateState);
+});
+
+onBeforeUnmount(() => {
+  socket.off("UPDATE_STATE", handleUpdateState);
+  socket.close();
+});
 </script>
-<style src='papercss/dist/paper.min.css' />
+
 <style>
-.main{
+.main {
   padding-bottom: 130px !important;
 }
-h2{
+
+h2 {
   margin-top: 0;
 }
 </style>
-
