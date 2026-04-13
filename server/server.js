@@ -1,207 +1,272 @@
-const express = require('express');
+const express = require("express");
+const {
+  GAME_STATES,
+  ROOM_ID_LENGTH,
+  addPlayerToRoom,
+  assignNumber,
+  createInitialRoomsState,
+  createRoomState,
+  finalizeWinner,
+  generateRoomId,
+  getPublicGameState,
+  getRoomState,
+  isValidRoomId,
+  normalizeRoomId,
+  removePlayerFromRoom,
+  removeRoom,
+  resetGameState,
+  returnNumber,
+  shouldPickWinner,
+  upsertRoom
+} = require("./game-rooms");
+
 const app = express();
-var port = process.env.PORT || 3001;
+const port = process.env.PORT || 3001;
 
-const infoTexts = [
-  "Vinnaren drar som vanligt lott sist i nästa runda.",
-  "Slut på tvättsvampar? Då har du kommit rätt!",
-  "Kom ihåg: att man kan fortfarande byta nummer om man har en muntlig överenskommelse.",
-  "Även gamla saker kan hitta nya ägare, eller återkomma i nästa års lotteri.",
-  "Tvätsvampar kan komma i många paket.",
-  "Tvättsvamp eller badsvamp är sfäriska svampdjur av släktet Spongia eller Hippospongia som lever i Medelhavet. -Wikipedia"
-]
+let store = createInitialRoomsState();
+const roomTimers = new Map();
 
-let players = [];
-let availableNumbers = [];
-let lastWinner = {
-  name: '',
-  number: 0
-}
-let winningNumber = 0;
-let infoText = getRandomInfoText();
-
-// PICK_TICKET, DRAW_WINNER, WINNER_ANNOUNCED
-let state = 'PICK_TICKET';
-
-const getGameState = () => {
-  const numbersLeft = availableNumbers.length
-  return {
-    players,
-    state,
-    numbersLeft,
-    lastWinner,
-    infoText
-  }
-}
-
-//Server set up
 const server = app.listen(port, function () {
-  console.log('Running on port ' + port);
+  console.log("Running on port " + port);
 });
 
-const corsOrigin = process.env.NODE_ENV === 'development' ? 'http://localhost:8080' : 'https://julklappar.herokuapp.com';
+const isDevelopment = process.env.NODE_ENV === "development";
+const corsOrigin = isDevelopment ? true : "https://julklappar.herokuapp.com";
 
-const io = require('socket.io')(server, {
+const io = require("socket.io")(server, {
   cors: {
     origin: corsOrigin,
     methods: ["GET", "POST"]
   }
+});
+
+app.use("/", express.static(process.cwd() + "/dist"));
+
+function emitRoomState(roomId) {
+  const roomState = getRoomState(store, roomId);
+
+  if (!roomState) {
+    return;
+  }
+
+  io.to(roomId).emit("UPDATE_STATE", {
+    roomId,
+    ...getPublicGameState(roomState)
+  });
 }
-);
 
-//serves dist folder on root
-app.use('/', express.static(process.cwd() + '/dist'));
+function ensureRoom(roomId) {
+  const normalizedRoomId = normalizeRoomId(roomId);
+  const existingRoom = getRoomState(store, normalizedRoomId);
 
-function getRandomNumber() {
-  return Math.floor(Math.random() * players.length + 1);
+  if (existingRoom) {
+    return normalizedRoomId;
+  }
+
+  store = upsertRoom(store, normalizedRoomId, createRoomState());
+  return normalizedRoomId;
 }
 
-function getRandomInfoText(){
-  const r = Math.floor(Math.random() * infoTexts.length);
-  return infoTexts[r];
+function updateRoom(roomId, updater) {
+  const normalizedRoomId = normalizeRoomId(roomId);
+  const currentRoom = getRoomState(store, normalizedRoomId) || createRoomState();
+  const nextRoom = updater(currentRoom);
+
+  if (nextRoom.players.length === 0) {
+    store = removeRoom(store, normalizedRoomId);
+    return null;
+  }
+
+  store = upsertRoom(store, normalizedRoomId, nextRoom);
+  return nextRoom;
 }
 
-function addPlayer(playerName) {
-  if (playerName && !players.some(player => player.name === playerName)) {
-    players.push({
-      name: playerName,
-      currentNumber: 0,
-      wins: 0
-    })
-    flushPlayerNumbers();
-    generateNumbers();
-    state = 'PICK_TICKET';
+function clearRoomTimer(roomId) {
+  const normalizedRoomId = normalizeRoomId(roomId);
+  const timer = roomTimers.get(normalizedRoomId);
+
+  if (timer) {
+    clearTimeout(timer);
+    roomTimers.delete(normalizedRoomId);
+  }
+}
+
+function scheduleWinner(roomId) {
+  const normalizedRoomId = normalizeRoomId(roomId);
+
+  clearRoomTimer(normalizedRoomId);
+
+  roomTimers.set(
+    normalizedRoomId,
+    setTimeout(() => {
+      roomTimers.delete(normalizedRoomId);
+
+      const roomState = getRoomState(store, normalizedRoomId);
+      if (!roomState || roomState.state !== GAME_STATES.DRAW_WINNER) {
+        return;
+      }
+
+      updateRoom(normalizedRoomId, finalizeWinner);
+      emitRoomState(normalizedRoomId);
+    }, 5000)
+  );
+}
+
+function startWinnerDraw(roomId) {
+  updateRoom(roomId, roomState => ({
+    ...roomState,
+    state: GAME_STATES.DRAW_WINNER
+  }));
+  emitRoomState(roomId);
+  scheduleWinner(roomId);
+}
+
+function handlePlayerJoin(socket, payload) {
+  const playerName = String(payload && payload.name ? payload.name : "").trim();
+  const roomId = normalizeRoomId(payload && payload.roomId);
+
+  if (!playerName || !isValidRoomId(roomId)) {
+    socket.emit("ROOM_ERROR", {
+      message: `Room id must be ${ROOM_ID_LENGTH} letters or numbers.`
+    });
+    return;
+  }
+
+  socket.join(ensureRoom(roomId));
+  socket.data.playerName = playerName;
+  socket.data.roomId = roomId;
+
+  updateRoom(roomId, roomState => addPlayerToRoom(roomState, playerName));
+  emitRoomState(roomId);
+}
+
+function requireRoom(socket, payload) {
+  const roomId = normalizeRoomId(
+    (payload && payload.roomId) || socket.data.roomId
+  );
+  const roomState = getRoomState(store, roomId);
+
+  if (!roomState) {
+    socket.emit("ROOM_ERROR", {
+      message: "That room could not be found."
+    });
+    return null;
+  }
+
+  return {
+    roomId,
+    roomState
   };
 }
 
-function removePlayer(playerName) {
-  players.forEach((player, index) => {
-    if(playerName === player.name){
-      players.splice(index, 1)
-    }
-  })
-  flushPlayerNumbers();
-  generateNumbers();
-  state = 'PICK_TICKET'
-  updateGameState();
-}
-
-function isValidPlayer(playerName) {
-  players.forEach(player => {
-    if (playerName == player.name) {
-      return true;
-    }
-  })
-  return false;
-}
-
-//https://stackoverflow.com/questions/2450954/how-to-randomize-shuffle-a-javascript-array
-function shuffleArray(array) {
-  var currentIndex = array.length, temporaryValue, randomIndex;
-
-  // While there remain elements to shuffle...
-  while (0 !== currentIndex) {
-
-    // Pick a remaining element...
-    randomIndex = Math.floor(Math.random() * currentIndex);
-    currentIndex -= 1;
-
-    // And swap it with the current element.
-    temporaryValue = array[currentIndex];
-    array[currentIndex] = array[randomIndex];
-    array[randomIndex] = temporaryValue;
+function requireAdmin(socket, room) {
+  if (socket.data.playerName !== room.roomState.adminName) {
+    socket.emit("ROOM_ERROR", {
+      message: "Only the room admin can do that."
+    });
+    return false;
   }
 
-  return array;
+  return true;
 }
 
-function pickWinner() {
-  state = 'DRAW_WINNER';
-
-  setTimeout(() => {
-    updateGameState();
-    players.forEach((player, index) => {
-      if (player.currentNumber === winningNumber) {
-        lastWinner.name = player.name;
-        lastWinner.number = winningNumber;
-        players[index].wins++;
-      }
-    })
-    state = 'WINNER_ANNOUNCED'
-    updateGameState();
-  }, 5000)
-}
-
-function generateNumbers() {
-  winningNumber = getRandomNumber();
-  availableNumbers = [];
-  players.forEach((value, index) => {
-    availableNumbers.push(index + 1);
-  })
-  availableNumbers = shuffleArray(availableNumbers)
-}
-
-function playerPickNumber(playerName) {
-  players.forEach((player, index) => {
-    if (player.name == playerName && !player.currentNumber) {
-      players[index].currentNumber = availableNumbers.pop();
-      return;
-    }
-  })
-  if (availableNumbers.length === 0) {
-    pickWinner();
+function handlePickNumber(socket, payload) {
+  const room = requireRoom(socket, payload);
+  if (!room) {
+    return;
   }
-}
-function playerReturnNumber(playerName) {
-  players.forEach((player, index) => {
-    if (player.name == playerName && player.currentNumber) {
-      availableNumbers.push(player.currentNumber)
-      players[index].currentNumber = 0;
-      return;
-    }
-  })
-  if (players.filter(player => Boolean(player.currentNumber)).length === 0) {
-    flushPlayerNumbers();
-    generateNumbers();
-    infoText = getRandomInfoText();
-    state = 'PICK_TICKET';
-    updateGameState();
+
+  clearRoomTimer(room.roomId);
+
+  const nextRoom = updateRoom(room.roomId, roomState =>
+    assignNumber(roomState, payload.name)
+  );
+
+  if (!nextRoom) {
+    return;
   }
+
+  if (shouldPickWinner(nextRoom)) {
+    startWinnerDraw(room.roomId);
+    return;
+  }
+
+  emitRoomState(room.roomId);
 }
 
-function flushPlayerNumbers() {
-  players.forEach((player, index) => {
-    players[index].currentNumber = 0;
-  })
+function handleReturnNumber(socket, payload) {
+  const room = requireRoom(socket, payload);
+  if (!room) {
+    return;
+  }
+
+  clearRoomTimer(room.roomId);
+  updateRoom(room.roomId, roomState => returnNumber(roomState, payload.name));
+  emitRoomState(room.roomId);
 }
 
-function updateGameState() {
-  io.emit('UPDATE_STATE', getGameState())
+function handleRemovePlayer(socket, payload) {
+  const room = requireRoom(socket, payload);
+  if (!room) {
+    return;
+  }
+
+  if (!requireAdmin(socket, room)) {
+    return;
+  }
+
+  clearRoomTimer(room.roomId);
+  const nextRoom = updateRoom(room.roomId, roomState =>
+    removePlayerFromRoom(roomState, payload.name)
+  );
+
+  if (!nextRoom) {
+    socket.leave(room.roomId);
+    return;
+  }
+
+  emitRoomState(room.roomId);
 }
 
+function handleResetGameState(socket, payload) {
+  const room = requireRoom(socket, payload);
+  if (!room) {
+    return;
+  }
 
-io.on('connection', function (socket) {
-  console.log(socket.id)
-  socket.on('PLAYER_JOIN', function (name) {
-    addPlayer(name);
-    updateGameState();
+  if (!requireAdmin(socket, room)) {
+    return;
+  }
+
+  clearRoomTimer(room.roomId);
+  updateRoom(room.roomId, resetGameState);
+  emitRoomState(room.roomId);
+}
+
+io.on("connection", function (socket) {
+  console.log(socket.id);
+
+  socket.emit("ROOM_ID_SUGGESTION", {
+    roomId: generateRoomId(Object.keys(store.rooms))
   });
-  socket.on('PICK_NUMBER', function (name) {
-    playerPickNumber(name);
-    updateGameState();
-  });
-  socket.on('RETURN_NUMBER', function (name) {
-    playerReturnNumber(name);
-    updateGameState();
-  })
-  socket.on('REMOVE_PLAYER', function(name) {
-    removePlayer(name);
-  }),
-  socket.on('RESET_GAME_STATE', function(){
-    flushPlayerNumbers();
-    generateNumbers();
-    state = 'PICK_TICKET';
-    updateGameState();
-  })
 
+  socket.on("PLAYER_JOIN", function (payload) {
+    handlePlayerJoin(socket, payload);
+  });
+
+  socket.on("PICK_NUMBER", function (payload) {
+    handlePickNumber(socket, payload);
+  });
+
+  socket.on("RETURN_NUMBER", function (payload) {
+    handleReturnNumber(socket, payload);
+  });
+
+  socket.on("REMOVE_PLAYER", function (payload) {
+    handleRemovePlayer(socket, payload);
+  });
+
+  socket.on("RESET_GAME_STATE", function (payload) {
+    handleResetGameState(socket, payload);
+  });
 });

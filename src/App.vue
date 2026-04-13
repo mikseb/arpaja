@@ -6,11 +6,21 @@
         <h2>Julklappslotteri</h2>
         <p>En hemmagjord present säger mer än en färdigköpt pryl. Den säger att man använt tid och kraft. Den säger att det är något personligt. Den säger att man får för lite veckopeng.<br><br> - Steen og Stoffer</p>
         <button v-if="protocol === 'http:'" v-on:click="changeProtocol">Gå till https</button>
-        <Select-Name @set-name="handleSetName"/>
+        <Select-Name
+          :initial-room-id="suggestedRoomId"
+          :error-message="roomError"
+          @set-player="handleSetPlayer"
+        />
         <p>Copyright 2022 © Årstadal Web Media Productions</p>
       </div> 
       <div v-if="playerInState">
-        <GameScreen :name="name" :socket="socket" :gameState="gameState"/>
+        <GameScreen
+          :name="name"
+          :room-id="roomId"
+          :socket="socket"
+          :gameState="gameState"
+          :error-message="roomError"
+        />
       </div>
     </div>
   </div>
@@ -27,22 +37,33 @@ export default {
   name: 'app',
   data() {
       return {
-          name: 'asdf',
-          ticketNumber: 0,
+          name: '',
+          roomId: '',
           socket: io(ioHost),
           gameState: null,
-          protocol: window.location.protocol
+          protocol: window.location.protocol,
+          suggestedRoomId: '',
+          roomError: ''
       }
   },
   computed: {
     playerInState () {
-      return this.gameState && this.gameState.players.some(player => player.name === this.name);
+      return Boolean(
+        this.gameState &&
+        this.roomId &&
+        this.gameState.players.some(player => player.name === this.name)
+      );
     }
   },
   methods:{
-    handleSetName(name) {
+    handleSetPlayer({ name, roomId }) {
       this.name = name;
-      this.socket.emit('PLAYER_JOIN', name)
+      this.roomId = roomId;
+      this.roomError = '';
+      this.socket.emit('PLAYER_JOIN', {
+        name,
+        roomId
+      });
     },
     changeProtocol(){
       window.location = window.location.href.replace('http:', 'https:')
@@ -53,15 +74,19 @@ export default {
     GameScreen
   },
   mounted(){
-    this.socket.on('UPDATE_PLAYERS', (players) => {
-      this.players = players;
+    this.socket.on('ROOM_ID_SUGGESTION', ({ roomId }) => {
+      this.suggestedRoomId = roomId;
     });
     this.socket.on('UPDATE_STATE', state => {
-      this.gameState = state
+      if (state.roomId === this.roomId) {
+        this.roomError = '';
+        this.gameState = state;
+      }
     });
-    this.$on('V_PICK_NUMBER', data => {
-      console.log('picknumber', data)
-    })
+    this.socket.on('ROOM_ERROR', ({ message }) => {
+      this.roomError = message;
+      this.gameState = null;
+    });
   }
 }
 </script>
@@ -74,4 +99,3 @@ h2{
   margin-top: 0;
 }
 </style>
-

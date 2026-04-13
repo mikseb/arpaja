@@ -5,6 +5,8 @@
         <span class="latest-winner-title">Senaste vinst</span><br>
         <span class="latest-winner-name">{{gameState.lastWinner.number}} - {{gameState.lastWinner.name}}</span>
       </p>
+      <p class="room-id">Rumskod: {{ roomId }}</p>
+      <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
     </div>
     <div class="row flex-spaces tabs">
       <input id="tab1" type="radio" name="tabs" checked>
@@ -13,8 +15,8 @@
       <input id="tab2" type="radio" name="tabs">
       <label for="tab2">Tävlande</label>
 
-      <input v-if="name === 'Mikko' " id="tab3" type="radio" name="tabs">
-      <label v-if="name === 'Mikko' " for="tab3">Admin</label>
+      <input v-if="isAdmin" id="tab3" type="radio" name="tabs">
+      <label v-if="isAdmin" for="tab3">Admin</label>
 
       <div class="content" id="content1">
         <div v-if="gameState.state === 'PICK_TICKET'" class='pickTicket'>
@@ -54,6 +56,7 @@
       </div>
       <div class="content" id="content3">
         <h3>Admin</h3>
+        <p>Admin: {{ gameState.adminName }}</p>
         <button v-on:click="adminActionEnabled = !adminActionEnabled">Enable admin buttons</button><br>
         <span v-for="(player, index) in players" :key="index">{{player.name}} <button v-if="adminActionEnabled" @click='kickPlayer(player.name)' class="btn-small">Kick</button><br></span>
         <button  v-if="adminActionEnabled" v-on:click="resetGameState">Reset gameState</button>
@@ -79,7 +82,7 @@ export default {
   components: {
     ScoreTable
   },
-  props: ["name", "socket", "gameState"],
+  props: ["name", "roomId", "socket", "gameState", "errorMessage"],
   data() {
     return {
       adminActionEnabled: false
@@ -110,6 +113,9 @@ export default {
         player => player.name == this.name && player.currentNumber
       );
     },
+    isAdmin() {
+      return this.gameState && this.gameState.adminName === this.name;
+    },
     ticketBarWidth() {
       const playersTotal =
         (this.gameState && this.gameState.players.length) || 0;
@@ -120,19 +126,30 @@ export default {
   methods: {
     pickTicket() {
       if (this.gameState.state === "PICK_TICKET") {
-        this.socket.emit("PICK_NUMBER", this.name);
+        this.socket.emit("PICK_NUMBER", {
+          name: this.name,
+          roomId: this.roomId
+        });
       }
     },
     returnTicket() {
       if (this.gameState.state === "WINNER_ANNOUNCED") {
-        this.socket.emit("RETURN_NUMBER", this.name);
+        this.socket.emit("RETURN_NUMBER", {
+          name: this.name,
+          roomId: this.roomId
+        });
       }
     },
     kickPlayer(playerName) {
-      this.socket.emit("REMOVE_PLAYER", playerName);
+      this.socket.emit("REMOVE_PLAYER", {
+        name: playerName,
+        roomId: this.roomId
+      });
     },
     resetGameState() {
-      this.socket.emit("RESET_GAME_STATE");
+      this.socket.emit("RESET_GAME_STATE", {
+        roomId: this.roomId
+      });
     }
   }
 };
@@ -155,6 +172,14 @@ export default {
 }
 .latest-winner-name {
   font-size: 36px;
+}
+.room-id {
+  margin-top: 0;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+}
+.error {
+  color: #a7342d;
 }
 .header {
   margin-bottom: 2px;
@@ -202,4 +227,3 @@ export default {
   }
 }
 </style>
-
