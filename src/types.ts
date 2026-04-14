@@ -12,6 +12,8 @@ export interface LastWinner {
 }
 
 export interface GameState {
+  roomId: string;
+  adminName: string;
   players: Player[];
   state: RoundState;
   numbersLeft: number;

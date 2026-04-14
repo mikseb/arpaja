@@ -11,10 +11,21 @@
           - Steen og Stoffer
         </p>
         <button v-if="protocol === 'http:'" @click="changeProtocol">Gå till https</button>
-        <SelectName @set-name="handleSetName" />
+        <SelectName
+          :initial-room-id="suggestedRoomId"
+          :error-message="roomError"
+          @set-player="handleSetPlayer"
+        />
         <p>Copyright 2022 © Årstadal Web Media Productions</p>
       </div>
-      <GameScreen v-else :name="name" :socket="socket" :game-state="gameState" />
+      <GameScreen
+        v-else
+        :name="name"
+        :room-id="roomId"
+        :socket="socket"
+        :game-state="gameState"
+        :error-message="roomError"
+      />
     </div>
   </div>
 </template>
@@ -28,6 +39,8 @@ import SelectName from "./components/SelectName.vue";
 import type { GameState } from "./types";
 
 const emptyGameState: GameState = {
+  roomId: "",
+  adminName: "",
   players: [],
   state: "PICK_TICKET",
   numbersLeft: 0,
@@ -39,17 +52,27 @@ const emptyGameState: GameState = {
 };
 
 const name = ref("");
+const roomId = ref("");
 const protocol = ref(window.location.protocol);
+const suggestedRoomId = ref("");
+const roomError = ref("");
 const gameState = ref<GameState>(emptyGameState);
-const socket: Socket = io(import.meta.env.DEV ? "http://localhost:3001" : undefined);
 
-const playerInState = computed(() =>
-  gameState.value.players.some((player) => player.name === name.value),
+const socketHost = import.meta.env.DEV ? `http://${window.location.hostname}:3001` : undefined;
+const socket: Socket = io(socketHost);
+
+const playerInState = computed(
+  () =>
+    Boolean(roomId.value) &&
+    gameState.value.players.some((player) => player.name === name.value),
 );
 
-function handleSetName(playerName: string) {
-  name.value = playerName;
-  socket.emit("PLAYER_JOIN", playerName);
+function handleSetPlayer(payload: { name: string; roomId: string }) {
+  name.value = payload.name;
+  roomId.value = payload.roomId;
+  roomError.value = "";
+
+  socket.emit("PLAYER_JOIN", payload);
 }
 
 function changeProtocol() {
@@ -57,15 +80,36 @@ function changeProtocol() {
 }
 
 function handleUpdateState(state: GameState) {
+  if (state.roomId !== roomId.value) {
+    return;
+  }
+
+  roomError.value = "";
   gameState.value = state;
+}
+
+function handleRoomSuggestion(payload: { roomId: string }) {
+  suggestedRoomId.value = payload.roomId;
+}
+
+function handleRoomError(payload: { message: string }) {
+  roomError.value = payload.message;
+  gameState.value = {
+    ...emptyGameState,
+    roomId: roomId.value,
+  };
 }
 
 onMounted(() => {
   socket.on("UPDATE_STATE", handleUpdateState);
+  socket.on("ROOM_ID_SUGGESTION", handleRoomSuggestion);
+  socket.on("ROOM_ERROR", handleRoomError);
 });
 
 onBeforeUnmount(() => {
   socket.off("UPDATE_STATE", handleUpdateState);
+  socket.off("ROOM_ID_SUGGESTION", handleRoomSuggestion);
+  socket.off("ROOM_ERROR", handleRoomError);
   socket.close();
 });
 </script>

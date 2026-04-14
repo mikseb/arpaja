@@ -7,6 +7,8 @@
           >{{ gameState.lastWinner.number }} - {{ gameState.lastWinner.name }}</span
         >
       </p>
+      <p class="room-id">Rumskod: {{ roomId }}</p>
+      <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
     </div>
     <div class="row flex-spaces tabs">
       <input id="tab1" type="radio" name="tabs" checked />
@@ -73,6 +75,7 @@
       </div>
       <div id="content3" class="content">
         <h3>Admin</h3>
+        <p>Admin: {{ gameState.adminName }}</p>
         <button @click="toggleAdminAction">Enable admin buttons</button><br />
         <span v-for="player in players" :key="player.name">
           {{ player.name }}
@@ -81,7 +84,7 @@
           </button>
           <br />
         </span>
-        <button v-if="adminActionEnabled" @click="resetGameState">Reset gameState</button>
+        <button v-if="adminActionEnabled" @click="resetCurrentGameState">Reset gameState</button>
       </div>
     </div>
     <div class="bottom-menu container row">
@@ -120,8 +123,10 @@ import ScoreTable from "./ScoreTable.vue";
 
 const props = defineProps<{
   name: string;
+  roomId: string;
   socket: Socket;
   gameState: GameState;
+  errorMessage: string;
 }>();
 
 const adminActionEnabled = ref(false);
@@ -139,6 +144,7 @@ const playersWithoutNumbers = computed(() =>
   players.value.filter((player) => player.currentNumber === 0),
 );
 const playerHasNumber = computed(() => Boolean(thisPlayer.value.currentNumber));
+const isAdmin = computed(() => props.gameState.adminName === props.name);
 const ticketBarWidth = computed(() => {
   if (players.value.length === 0) {
     return 0;
@@ -146,7 +152,6 @@ const ticketBarWidth = computed(() => {
 
   return Math.floor((props.gameState.numbersLeft / players.value.length) * 100);
 });
-const isAdmin = computed(() => props.name === "Mikko");
 
 function toggleAdminAction() {
   adminActionEnabled.value = !adminActionEnabled.value;
@@ -154,22 +159,33 @@ function toggleAdminAction() {
 
 function pickTicket() {
   if (props.gameState.state === "PICK_TICKET") {
-    props.socket.emit("PICK_NUMBER", props.name);
+    props.socket.emit("PICK_NUMBER", {
+      name: props.name,
+      roomId: props.roomId,
+    });
   }
 }
 
 function returnTicket() {
   if (props.gameState.state === "WINNER_ANNOUNCED") {
-    props.socket.emit("RETURN_NUMBER", props.name);
+    props.socket.emit("RETURN_NUMBER", {
+      name: props.name,
+      roomId: props.roomId,
+    });
   }
 }
 
 function kickPlayer(playerName: string) {
-  props.socket.emit("REMOVE_PLAYER", playerName);
+  props.socket.emit("REMOVE_PLAYER", {
+    name: playerName,
+    roomId: props.roomId,
+  });
 }
 
-function resetGameState() {
-  props.socket.emit("RESET_GAME_STATE");
+function resetCurrentGameState() {
+  props.socket.emit("RESET_GAME_STATE", {
+    roomId: props.roomId,
+  });
 }
 </script>
 
@@ -193,6 +209,16 @@ function resetGameState() {
 
 .latest-winner-name {
   font-size: 36px;
+}
+
+.room-id {
+  margin-top: 0;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+}
+
+.error {
+  color: #a7342d;
 }
 
 .header {
