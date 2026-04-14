@@ -1,4 +1,4 @@
-const ROOM_ID_LENGTH = 4;
+export const ROOM_ID_LENGTH = 4;
 
 const infoTexts = [
   "Vinnaren drar som vanligt lott sist i nästa runda.",
@@ -9,19 +9,19 @@ const infoTexts = [
   "Tvättsvamp eller badsvamp är sfäriska svampdjur av släktet Spongia eller Hippospongia som lever i Medelhavet. -Wikipedia"
 ];
 
-const GAME_STATES = {
+export const GAME_STATES = {
   PICK_TICKET: "PICK_TICKET",
   DRAW_WINNER: "DRAW_WINNER",
   WINNER_ANNOUNCED: "WINNER_ANNOUNCED"
 };
 
-function normalizeRoomId(roomId) {
+export function normalizeRoomId(roomId) {
   return String(roomId || "")
     .trim()
     .toUpperCase();
 }
 
-function isValidRoomId(roomId) {
+export function isValidRoomId(roomId) {
   return /^[A-Z0-9]{4}$/.test(normalizeRoomId(roomId));
 }
 
@@ -58,7 +58,7 @@ function createPlayer(playerName) {
   };
 }
 
-function createRoomState() {
+export function createRoomState() {
   return {
     players: [],
     adminName: "",
@@ -73,17 +73,17 @@ function createRoomState() {
   };
 }
 
-function createInitialRoomsState() {
+export function createInitialRoomsState() {
   return {
     rooms: {}
   };
 }
 
-function getRoomState(store, roomId) {
+export function getRoomState(store, roomId) {
   return store.rooms[normalizeRoomId(roomId)] || null;
 }
 
-function upsertRoom(store, roomId, roomState) {
+export function upsertRoom(store, roomId, roomState) {
   const normalizedRoomId = normalizeRoomId(roomId);
 
   return {
@@ -95,7 +95,7 @@ function upsertRoom(store, roomId, roomState) {
   };
 }
 
-function removeRoom(store, roomId) {
+export function removeRoom(store, roomId) {
   const normalizedRoomId = normalizeRoomId(roomId);
   const nextRooms = { ...store.rooms };
   delete nextRooms[normalizedRoomId];
@@ -106,7 +106,7 @@ function removeRoom(store, roomId) {
   };
 }
 
-function getPublicGameState(roomState) {
+export function getPublicGameState(roomState) {
   return {
     players: roomState.players,
     adminName: roomState.adminName,
@@ -146,7 +146,7 @@ function resetRound(roomState) {
   };
 }
 
-function addPlayerToRoom(roomState, playerName) {
+export function addPlayerToRoom(roomState, playerName) {
   if (!playerName || roomState.players.some(player => player.name === playerName)) {
     return roomState;
   }
@@ -160,7 +160,7 @@ function addPlayerToRoom(roomState, playerName) {
   return resetRound(nextState);
 }
 
-function removePlayerFromRoom(roomState, playerName) {
+export function removePlayerFromRoom(roomState, playerName) {
   const nextPlayers = roomState.players.filter(player => player.name !== playerName);
 
   if (nextPlayers.length === roomState.players.length) {
@@ -180,7 +180,7 @@ function removePlayerFromRoom(roomState, playerName) {
   };
 }
 
-function assignNumber(roomState, playerName) {
+export function assignNumber(roomState, playerName) {
   if (roomState.state !== GAME_STATES.PICK_TICKET) {
     return roomState;
   }
@@ -206,7 +206,7 @@ function assignNumber(roomState, playerName) {
   };
 }
 
-function finalizeWinner(roomState) {
+export function finalizeWinner(roomState) {
   const winningPlayer = roomState.players.find(
     player => player.currentNumber === roomState.winningNumber
   );
@@ -233,11 +233,11 @@ function finalizeWinner(roomState) {
   };
 }
 
-function shouldPickWinner(roomState) {
+export function shouldPickWinner(roomState) {
   return roomState.availableNumbers.length === 0 && roomState.players.length > 0;
 }
 
-function returnNumber(roomState, playerName) {
+export function returnNumber(roomState, playerName) {
   let returnedNumber = null;
 
   const players = roomState.players.map(player => {
@@ -273,11 +273,11 @@ function returnNumber(roomState, playerName) {
   return nextState;
 }
 
-function resetGameState(roomState) {
+export function resetGameState(roomState) {
   return resetRound(roomState);
 }
 
-function generateRoomId(existingRoomIds) {
+export function generateRoomId(existingRoomIds) {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const usedRoomIds = new Set(existingRoomIds.map(normalizeRoomId));
 
@@ -292,24 +292,3 @@ function generateRoomId(existingRoomIds) {
 
   return roomId;
 }
-
-module.exports = {
-  GAME_STATES,
-  ROOM_ID_LENGTH,
-  addPlayerToRoom,
-  assignNumber,
-  createInitialRoomsState,
-  createRoomState,
-  finalizeWinner,
-  generateRoomId,
-  getPublicGameState,
-  getRoomState,
-  isValidRoomId,
-  normalizeRoomId,
-  removePlayerFromRoom,
-  removeRoom,
-  resetGameState,
-  returnNumber,
-  shouldPickWinner,
-  upsertRoom
-};

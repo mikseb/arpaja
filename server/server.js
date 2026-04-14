@@ -1,5 +1,10 @@
-const express = require("express");
-const {
+import express from "express";
+import { createServer } from "node:http";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { Server } from "socket.io";
+
+import {
   GAME_STATES,
   ROOM_ID_LENGTH,
   addPlayerToRoom,
@@ -17,30 +22,37 @@ const {
   resetGameState,
   returnNumber,
   shouldPickWinner,
-  upsertRoom
-} = require("./game-rooms");
+  upsertRoom,
+} from "./game-rooms.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distDir = path.resolve(__dirname, "../dist");
+const port = Number(process.env.PORT) || 3001;
+const isDevelopment = process.env.NODE_ENV === "development";
+const clientOrigin = process.env.CLIENT_ORIGIN || (isDevelopment ? true : undefined);
 
 const app = express();
-const port = process.env.PORT || 3001;
+const server = createServer(app);
+const io = new Server(server, {
+  cors:
+    clientOrigin === true
+      ? {
+          origin: true,
+          methods: ["GET", "POST"],
+        }
+      : clientOrigin
+        ? {
+            origin: clientOrigin,
+            methods: ["GET", "POST"],
+          }
+        : undefined,
+});
 
 let store = createInitialRoomsState();
 const roomTimers = new Map();
 
-const server = app.listen(port, function () {
-  console.log("Running on port " + port);
-});
-
-const isDevelopment = process.env.NODE_ENV === "development";
-const corsOrigin = isDevelopment ? '*' : "https://julklappar.herokuapp.com";
-
-const io = require("socket.io")(server, {
-  cors: {
-    origin: corsOrigin,
-    methods: ["GET", "POST"]
-  }
-});
-
-app.use("/", express.static(process.cwd() + "/dist"));
+app.use("/", express.static(distDir));
 
 function emitRoomState(roomId) {
   const roomState = getRoomState(store, roomId);
@@ -51,7 +63,7 @@ function emitRoomState(roomId) {
 
   io.to(roomId).emit("UPDATE_STATE", {
     roomId,
-    ...getPublicGameState(roomState)
+    ...getPublicGameState(roomState),
   });
 }
 
@@ -108,26 +120,26 @@ function scheduleWinner(roomId) {
 
       updateRoom(normalizedRoomId, finalizeWinner);
       emitRoomState(normalizedRoomId);
-    }, 5000)
+    }, 5000),
   );
 }
 
 function startWinnerDraw(roomId) {
-  updateRoom(roomId, roomState => ({
+  updateRoom(roomId, (roomState) => ({
     ...roomState,
-    state: GAME_STATES.DRAW_WINNER
+    state: GAME_STATES.DRAW_WINNER,
   }));
   emitRoomState(roomId);
   scheduleWinner(roomId);
 }
 
 function handlePlayerJoin(socket, payload) {
-  const playerName = String(payload && payload.name ? payload.name : "").trim();
-  const roomId = normalizeRoomId(payload && payload.roomId);
+  const playerName = String(payload?.name ?? "").trim();
+  const roomId = normalizeRoomId(payload?.roomId);
 
   if (!playerName || !isValidRoomId(roomId)) {
     socket.emit("ROOM_ERROR", {
-      message: `Room id must be ${ROOM_ID_LENGTH} letters or numbers.`
+      message: `Room id must be ${ROOM_ID_LENGTH} letters or numbers.`,
     });
     return;
   }
@@ -136,33 +148,28 @@ function handlePlayerJoin(socket, payload) {
   socket.data.playerName = playerName;
   socket.data.roomId = roomId;
 
-  updateRoom(roomId, roomState => addPlayerToRoom(roomState, playerName));
+  updateRoom(roomId, (roomState) => addPlayerToRoom(roomState, playerName));
   emitRoomState(roomId);
 }
 
 function requireRoom(socket, payload) {
-  const roomId = normalizeRoomId(
-    (payload && payload.roomId) || socket.data.roomId
-  );
+  const roomId = normalizeRoomId(payload?.roomId || socket.data.roomId);
   const roomState = getRoomState(store, roomId);
 
   if (!roomState) {
     socket.emit("ROOM_ERROR", {
-      message: "That room could not be found."
+      message: "That room could not be found.",
     });
     return null;
   }
 
-  return {
-    roomId,
-    roomState
-  };
+  return { roomId, roomState };
 }
 
 function requireAdmin(socket, room) {
   if (socket.data.playerName !== room.roomState.adminName) {
     socket.emit("ROOM_ERROR", {
-      message: "Only the room admin can do that."
+      message: "Only the room admin can do that.",
     });
     return false;
   }
@@ -178,8 +185,8 @@ function handlePickNumber(socket, payload) {
 
   clearRoomTimer(room.roomId);
 
-  const nextRoom = updateRoom(room.roomId, roomState =>
-    assignNumber(roomState, payload.name)
+  const nextRoom = updateRoom(room.roomId, (roomState) =>
+    assignNumber(roomState, payload.name),
   );
 
   if (!nextRoom) {
@@ -201,7 +208,7 @@ function handleReturnNumber(socket, payload) {
   }
 
   clearRoomTimer(room.roomId);
-  updateRoom(room.roomId, roomState => returnNumber(roomState, payload.name));
+  updateRoom(room.roomId, (roomState) => returnNumber(roomState, payload.name));
   emitRoomState(room.roomId);
 }
 
@@ -216,8 +223,8 @@ function handleRemovePlayer(socket, payload) {
   }
 
   clearRoomTimer(room.roomId);
-  const nextRoom = updateRoom(room.roomId, roomState =>
-    removePlayerFromRoom(roomState, payload.name)
+  const nextRoom = updateRoom(room.roomId, (roomState) =>
+    removePlayerFromRoom(roomState, payload.name),
   );
 
   if (!nextRoom) {
@@ -243,30 +250,32 @@ function handleResetGameState(socket, payload) {
   emitRoomState(room.roomId);
 }
 
-io.on("connection", function (socket) {
-  console.log(socket.id);
-
+io.on("connection", (socket) => {
   socket.emit("ROOM_ID_SUGGESTION", {
-    roomId: generateRoomId(Object.keys(store.rooms))
+    roomId: generateRoomId(Object.keys(store.rooms)),
   });
 
-  socket.on("PLAYER_JOIN", function (payload) {
+  socket.on("PLAYER_JOIN", (payload) => {
     handlePlayerJoin(socket, payload);
   });
 
-  socket.on("PICK_NUMBER", function (payload) {
+  socket.on("PICK_NUMBER", (payload) => {
     handlePickNumber(socket, payload);
   });
 
-  socket.on("RETURN_NUMBER", function (payload) {
+  socket.on("RETURN_NUMBER", (payload) => {
     handleReturnNumber(socket, payload);
   });
 
-  socket.on("REMOVE_PLAYER", function (payload) {
+  socket.on("REMOVE_PLAYER", (payload) => {
     handleRemovePlayer(socket, payload);
   });
 
-  socket.on("RESET_GAME_STATE", function (payload) {
+  socket.on("RESET_GAME_STATE", (payload) => {
     handleResetGameState(socket, payload);
   });
+});
+
+server.listen(port, () => {
+  console.log(`Running on port ${port}`);
 });
