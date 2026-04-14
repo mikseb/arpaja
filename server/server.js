@@ -1,272 +1,220 @@
-const express = require("express");
-const {
-  GAME_STATES,
-  ROOM_ID_LENGTH,
-  addPlayerToRoom,
-  assignNumber,
-  createInitialRoomsState,
-  createRoomState,
-  finalizeWinner,
-  generateRoomId,
-  getPublicGameState,
-  getRoomState,
-  isValidRoomId,
-  normalizeRoomId,
-  removePlayerFromRoom,
-  removeRoom,
-  resetGameState,
-  returnNumber,
-  shouldPickWinner,
-  upsertRoom
-} = require("./game-rooms");
+import express from "express";
+import { createServer } from "node:http";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { Server } from "socket.io";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distDir = path.resolve(__dirname, "../dist");
+const port = Number(process.env.PORT) || 3001;
+const clientOrigin =
+  process.env.CLIENT_ORIGIN ||
+  (process.env.NODE_ENV === "development"
+    ? "http://localhost:5173"
+    : undefined);
+
+const infoTexts = [
+  "Vinnaren drar som vanligt lott sist i nästa runda.",
+  "Slut på tvättsvampar? Då har du kommit rätt!",
+  "Kom ihåg: att man fortfarande kan byta nummer om man har en muntlig överenskommelse.",
+  "Även gamla saker kan hitta nya ägare, eller återkomma i nästa års lotteri.",
+  "Tvättsvampar kan komma i många paket.",
+  "Tvättsvamp eller badsvamp är sfäriska svampdjur av släktet Spongia eller Hippospongia som lever i Medelhavet. - Wikipedia",
+];
 
 const app = express();
-const port = process.env.PORT || 3001;
-
-let store = createInitialRoomsState();
-const roomTimers = new Map();
-
-const server = app.listen(port, function () {
-  console.log("Running on port " + port);
-});
-
-const isDevelopment = process.env.NODE_ENV === "development";
-const corsOrigin = isDevelopment ? '*' : "https://julklappar.herokuapp.com";
-
-const io = require("socket.io")(server, {
-  cors: {
-    origin: corsOrigin,
-    methods: ["GET", "POST"]
-  }
-});
-
-app.use("/", express.static(process.cwd() + "/dist"));
-
-function emitRoomState(roomId) {
-  const roomState = getRoomState(store, roomId);
-
-  if (!roomState) {
-    return;
-  }
-
-  io.to(roomId).emit("UPDATE_STATE", {
-    roomId,
-    ...getPublicGameState(roomState)
-  });
-}
-
-function ensureRoom(roomId) {
-  const normalizedRoomId = normalizeRoomId(roomId);
-  const existingRoom = getRoomState(store, normalizedRoomId);
-
-  if (existingRoom) {
-    return normalizedRoomId;
-  }
-
-  store = upsertRoom(store, normalizedRoomId, createRoomState());
-  return normalizedRoomId;
-}
-
-function updateRoom(roomId, updater) {
-  const normalizedRoomId = normalizeRoomId(roomId);
-  const currentRoom = getRoomState(store, normalizedRoomId) || createRoomState();
-  const nextRoom = updater(currentRoom);
-
-  if (nextRoom.players.length === 0) {
-    store = removeRoom(store, normalizedRoomId);
-    return null;
-  }
-
-  store = upsertRoom(store, normalizedRoomId, nextRoom);
-  return nextRoom;
-}
-
-function clearRoomTimer(roomId) {
-  const normalizedRoomId = normalizeRoomId(roomId);
-  const timer = roomTimers.get(normalizedRoomId);
-
-  if (timer) {
-    clearTimeout(timer);
-    roomTimers.delete(normalizedRoomId);
-  }
-}
-
-function scheduleWinner(roomId) {
-  const normalizedRoomId = normalizeRoomId(roomId);
-
-  clearRoomTimer(normalizedRoomId);
-
-  roomTimers.set(
-    normalizedRoomId,
-    setTimeout(() => {
-      roomTimers.delete(normalizedRoomId);
-
-      const roomState = getRoomState(store, normalizedRoomId);
-      if (!roomState || roomState.state !== GAME_STATES.DRAW_WINNER) {
-        return;
+const server = createServer(app);
+const io = new Server(server, {
+  cors: clientOrigin
+    ? {
+        origin: clientOrigin,
+        methods: ["GET", "POST"],
       }
+    : undefined,
+});
 
-      updateRoom(normalizedRoomId, finalizeWinner);
-      emitRoomState(normalizedRoomId);
-    }, 5000)
-  );
-}
+const players = [];
+let availableNumbers = [];
+let lastWinner = {
+  name: "",
+  number: 0,
+};
+let winningNumber = 0;
+let infoText = getRandomInfoText();
+let state = "PICK_TICKET";
 
-function startWinnerDraw(roomId) {
-  updateRoom(roomId, roomState => ({
-    ...roomState,
-    state: GAME_STATES.DRAW_WINNER
-  }));
-  emitRoomState(roomId);
-  scheduleWinner(roomId);
-}
-
-function handlePlayerJoin(socket, payload) {
-  const playerName = String(payload && payload.name ? payload.name : "").trim();
-  const roomId = normalizeRoomId(payload && payload.roomId);
-
-  if (!playerName || !isValidRoomId(roomId)) {
-    socket.emit("ROOM_ERROR", {
-      message: `Room id must be ${ROOM_ID_LENGTH} letters or numbers.`
-    });
-    return;
-  }
-
-  socket.join(ensureRoom(roomId));
-  socket.data.playerName = playerName;
-  socket.data.roomId = roomId;
-
-  updateRoom(roomId, roomState => addPlayerToRoom(roomState, playerName));
-  emitRoomState(roomId);
-}
-
-function requireRoom(socket, payload) {
-  const roomId = normalizeRoomId(
-    (payload && payload.roomId) || socket.data.roomId
-  );
-  const roomState = getRoomState(store, roomId);
-
-  if (!roomState) {
-    socket.emit("ROOM_ERROR", {
-      message: "That room could not be found."
-    });
-    return null;
-  }
-
+function getGameState() {
   return {
-    roomId,
-    roomState
+    players,
+    state,
+    numbersLeft: availableNumbers.length,
+    lastWinner,
+    infoText,
   };
 }
 
-function requireAdmin(socket, room) {
-  if (socket.data.playerName !== room.roomState.adminName) {
-    socket.emit("ROOM_ERROR", {
-      message: "Only the room admin can do that."
-    });
-    return false;
+function getRandomNumber() {
+  return Math.floor(Math.random() * players.length + 1);
+}
+
+function getRandomInfoText() {
+  const index = Math.floor(Math.random() * infoTexts.length);
+  return infoTexts[index];
+}
+
+function flushPlayerNumbers() {
+  players.forEach((player) => {
+    player.currentNumber = 0;
+  });
+}
+
+function shuffleArray(array) {
+  let currentIndex = array.length;
+
+  while (currentIndex !== 0) {
+    const randomIndex = Math.floor(Math.random() * currentIndex);
+    currentIndex -= 1;
+    const temporaryValue = array[currentIndex];
+    array[currentIndex] = array[randomIndex];
+    array[randomIndex] = temporaryValue;
   }
 
   return true;
 }
 
-function handlePickNumber(socket, payload) {
-  const room = requireRoom(socket, payload);
-  if (!room) {
-    return;
-  }
-
-  clearRoomTimer(room.roomId);
-
-  const nextRoom = updateRoom(room.roomId, roomState =>
-    assignNumber(roomState, payload.name)
-  );
-
-  if (!nextRoom) {
-    return;
-  }
-
-  if (shouldPickWinner(nextRoom)) {
-    startWinnerDraw(room.roomId);
-    return;
-  }
-
-  emitRoomState(room.roomId);
+function generateNumbers() {
+  winningNumber = getRandomNumber();
+  availableNumbers = players.map((_, index) => index + 1);
+  availableNumbers = shuffleArray(availableNumbers);
 }
 
-function handleReturnNumber(socket, payload) {
-  const room = requireRoom(socket, payload);
-  if (!room) {
-    return;
-  }
-
-  clearRoomTimer(room.roomId);
-  updateRoom(room.roomId, roomState => returnNumber(roomState, payload.name));
-  emitRoomState(room.roomId);
+function updateGameState() {
+  io.emit("UPDATE_STATE", getGameState());
 }
 
-function handleRemovePlayer(socket, payload) {
-  const room = requireRoom(socket, payload);
-  if (!room) {
+function addPlayer(playerName) {
+  if (!playerName || players.some((player) => player.name === playerName)) {
     return;
   }
 
-  if (!requireAdmin(socket, room)) {
-    return;
-  }
-
-  clearRoomTimer(room.roomId);
-  const nextRoom = updateRoom(room.roomId, roomState =>
-    removePlayerFromRoom(roomState, payload.name)
-  );
-
-  if (!nextRoom) {
-    socket.leave(room.roomId);
-    return;
-  }
-
-  emitRoomState(room.roomId);
+  players.push({
+    name: playerName,
+    currentNumber: 0,
+    wins: 0,
+  });
+  flushPlayerNumbers();
+  generateNumbers();
+  state = "PICK_TICKET";
 }
 
-function handleResetGameState(socket, payload) {
-  const room = requireRoom(socket, payload);
-  if (!room) {
+function removePlayer(playerName) {
+  const playerIndex = players.findIndex((player) => player.name === playerName);
+
+  if (playerIndex === -1) {
     return;
   }
 
-  if (!requireAdmin(socket, room)) {
-    return;
-  }
-
-  clearRoomTimer(room.roomId);
-  updateRoom(room.roomId, resetGameState);
-  emitRoomState(room.roomId);
+  players.splice(playerIndex, 1);
+  flushPlayerNumbers();
+  generateNumbers();
+  state = "PICK_TICKET";
+  updateGameState();
 }
 
-io.on("connection", function (socket) {
+function pickWinner() {
+  state = "DRAW_WINNER";
+
+  setTimeout(() => {
+    updateGameState();
+
+    players.forEach((player) => {
+      if (player.currentNumber === winningNumber) {
+        lastWinner = {
+          name: player.name,
+          number: winningNumber,
+        };
+        player.wins += 1;
+      }
+    });
+
+    state = "WINNER_ANNOUNCED";
+    updateGameState();
+  }, 5000);
+}
+
+function playerPickNumber(playerName) {
+  const player = players.find((entry) => entry.name === playerName);
+
+  if (player && !player.currentNumber) {
+    player.currentNumber = availableNumbers.pop() || 0;
+  }
+
+  if (availableNumbers.length === 0 && players.length > 0) {
+    pickWinner();
+  }
+}
+
+function playerReturnNumber(playerName) {
+  const player = players.find((entry) => entry.name === playerName);
+
+  if (player?.currentNumber) {
+    availableNumbers.push(player.currentNumber);
+    player.currentNumber = 0;
+  }
+
+  if (players.every((entry) => !entry.currentNumber)) {
+    flushPlayerNumbers();
+    generateNumbers();
+    infoText = getRandomInfoText();
+    state = "PICK_TICKET";
+    updateGameState();
+  }
+}
+
+app.use(express.static(distDir));
+
+app.get("*", (_request, response, next) => {
+  if (process.env.NODE_ENV === "development") {
+    next();
+    return;
+  }
+
+  response.sendFile(path.join(distDir, "index.html"));
+});
+
+io.on("connection", (socket) => {
   console.log(socket.id);
 
-  socket.emit("ROOM_ID_SUGGESTION", {
-    roomId: generateRoomId(Object.keys(store.rooms))
+  socket.emit("UPDATE_STATE", getGameState());
+
+  socket.on("PLAYER_JOIN", (name) => {
+    addPlayer(name);
+    updateGameState();
   });
 
-  socket.on("PLAYER_JOIN", function (payload) {
-    handlePlayerJoin(socket, payload);
+  socket.on("PICK_NUMBER", (name) => {
+    playerPickNumber(name);
+    updateGameState();
   });
 
-  socket.on("PICK_NUMBER", function (payload) {
-    handlePickNumber(socket, payload);
+  socket.on("RETURN_NUMBER", (name) => {
+    playerReturnNumber(name);
+    updateGameState();
   });
 
-  socket.on("RETURN_NUMBER", function (payload) {
-    handleReturnNumber(socket, payload);
+  socket.on("REMOVE_PLAYER", (name) => {
+    removePlayer(name);
   });
 
-  socket.on("REMOVE_PLAYER", function (payload) {
-    handleRemovePlayer(socket, payload);
+  socket.on("RESET_GAME_STATE", () => {
+    flushPlayerNumbers();
+    generateNumbers();
+    state = "PICK_TICKET";
+    updateGameState();
   });
+});
 
-  socket.on("RESET_GAME_STATE", function (payload) {
-    handleResetGameState(socket, payload);
-  });
+server.listen(port, () => {
+  console.log(`Running on port ${port}`);
 });
