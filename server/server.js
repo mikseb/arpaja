@@ -31,7 +31,7 @@ const server = app.listen(port, function () {
 });
 
 const isDevelopment = process.env.NODE_ENV === "development";
-const corsOrigin = isDevelopment ? true : "https://julklappar.herokuapp.com";
+const corsOrigin = isDevelopment ? '*' : "https://julklappar.herokuapp.com";
 
 const io = require("socket.io")(server, {
   cors: {
